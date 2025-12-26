@@ -1,6 +1,7 @@
 package com.sentinel.service;
 
 import com.sentinel.model.Seat;
+import com.sentinel.producer.BookingEventProducer;
 import com.sentinel.repository.SeatRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,44 +19,41 @@ public class BookingService {
 
     private final SeatRepository seatRepository;
     private final RedissonClient redissonClient;
+    private final BookingEventProducer eventProducer;
 
     @Transactional
     public String reserveSeat(Long seatId) {
-        // 1. Create a unique lock key for this specific seat
         String lockKey = "lock:seat:" + seatId;
         RLock lock = redissonClient.getLock(lockKey);
 
         try {
-            // 2. Try to acquire the lock (Wait 5s to get it, hold it for 10s)
-            // This is the "Magic" that prevents two people from buying the same seat
             if (lock.tryLock(5, 10, TimeUnit.SECONDS)) {
                 try {
-                    log.info("Lock acquired for seat: {}", seatId);
-
-                    // 3. Check DB if seat is already reserved
                     Seat seat = seatRepository.findById(seatId)
-                            .orElseThrow(() -> new RuntimeException("Seat not found"));
+                            .orElseThrow(() -> new RuntimeException("Requested seat does not exist"));
 
                     if (seat.isReserved()) {
-                        return "FAILED: Seat already reserved.";
+                        return "ALREADY_RESERVED";
                     }
 
-                    // 4. Perform the booking
                     seat.setReserved(true);
                     seatRepository.save(seat);
 
-                    return "SUCCESS: Seat " + seatId + " reserved!";
+                    // Trigger asynchronous notification
+                    eventProducer.emitBookingEvent(seatId, "RESERVED");
+
+                    return "SUCCESS";
                 } finally {
-                    // 5. Always release the lock so others can try
-                    lock.unlock();
-                    log.info("Lock released for seat: {}", seatId);
+                    if (lock.isHeldByCurrentThread()) {
+                        lock.unlock();
+                    }
                 }
-            } else {
-                return "FAILED: System busy (could not acquire lock).";
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return "ERROR: Transaction interrupted.";
+            throw new RuntimeException("Reservation process was interrupted");
         }
+
+        return "LOCK_ACQUISITION_FAILED";
     }
 }
