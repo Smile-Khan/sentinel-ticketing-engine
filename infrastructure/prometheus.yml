@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s # High frequency for near real-time monitoring
+
+scrape_configs:
+  - job_name: 'sentinel-engine'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      # 'host.docker.internal' allows the container to see the app running on your machine
+      - targets: ['host.docker.internal:8080']
