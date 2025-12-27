@@ -6,37 +6,52 @@ spring:
     virtual:
       enabled: true
 
+  # Database Connection & Pool Configuration
   datasource:
     url: jdbc:postgresql://localhost:5432/sentinel_db?jdbcCompliantTruncation=false&options=-c%20timezone=UTC
     username: user
     password: password
     driver-class-name: org.postgresql.Driver
-    # Increase pool size for high concurrency
     hikari:
       maximum-pool-size: 20
       connection-timeout: 2000
+      pool-name: SentinelHikariPool
 
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: false # Set to false to see our own logs better
+    show-sql: false
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
 
+  # Distributed Cache & Locking
   data:
     redis:
       host: localhost
       port: 6379
 
+  # Messaging Infrastructure
   kafka:
     bootstrap-servers: localhost:9092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      # Don't let Kafka block the app for more than 2 seconds
       properties:
         max.block.ms: 2000
         delivery.timeout.ms: 3000
         request.timeout.ms: 2000
+
+# Actuator & Metrics Scraping Configuration
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
