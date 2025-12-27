@@ -13,22 +13,26 @@ import java.util.Map;
 public class BookingEventProducer {
 
     private final KafkaTemplate<String, Object> kafkaTemplate;
-    private static final String BOOKING_TOPIC = "booking-events";
+    private static final String TOPIC = "booking-events";
 
+    /**
+     * Dispatches booking status updates to the message broker.
+     * Implementation is non-blocking to ensure core service throughput.
+     */
     public void emitBookingEvent(Long seatId, String status) {
-        log.info("Emitting booking event for seatId: {} with status: {}", seatId, status);
+        Map<String, Object> payload = Map.of(
+                "seatId", seatId,
+                "status", status,
+                "timestamp", System.currentTimeMillis()
+        );
 
-        try {
-            Map<String, Object> payload = Map.of(
-                    "seatId", seatId,
-                    "status", status,
-                    "timestamp", System.currentTimeMillis()
-            );
-
-            kafkaTemplate.send(BOOKING_TOPIC, String.valueOf(seatId), payload);
-        } catch (Exception e) {
-            // Prevent event publishing failures from rolling back the main transaction
-            log.error("Non-critical failure: Could not publish event to Kafka for seat {}", seatId, e);
-        }
+        kafkaTemplate.send(TOPIC, String.valueOf(seatId), payload)
+                .whenComplete((result, ex) -> {
+                    if (ex != null) {
+                        log.error("Asynchronous event dispatch failed for seat {}: {}", seatId, ex.getMessage());
+                    } else {
+                        log.debug("Event successfully published to topic {} for seat {}", TOPIC, seatId);
+                    }
+                });
     }
 }
